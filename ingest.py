@@ -1,0 +1,6 @@
+"""CLI entrypoint: python ingest.py --input <folder>"""
+
+from src.ingest import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())
