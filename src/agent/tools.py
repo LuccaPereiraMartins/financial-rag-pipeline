@@ -7,17 +7,15 @@ from strands import tool
 
 from src.index.vector_store import VectorStore
 
+# Lazy singleton: tools are registered as bare functions, so they can't close over
+# a store created in answer_question. get_store() once per tool call is cheap.
 _STORE: VectorStore | None = None
 
 
-def set_store(store: VectorStore) -> None:
-    global _STORE
-    _STORE = store
-
-
 def get_store() -> VectorStore:
+    global _STORE
     if _STORE is None:
-        raise RuntimeError("Vector store not initialized")
+        _STORE = VectorStore()
     return _STORE
 
 
@@ -25,27 +23,27 @@ def get_store() -> VectorStore:
 def retrieve_chunks(
     query: str,
     company: Optional[str] = None,
-    content_type: Optional[str] = None,
     doc_type: Optional[str] = None,
     k: int = 8,
 ) -> str:
-    """Semantic search over earnings PDFs.
+    """Semantic search over earnings PDFs (prose and tables).
 
     Args:
         query: What to look for (include period cues in the query text when relevant).
         company: Optional filter: "Lam Research", "KLA", "Applied Materials", "ASML".
-        content_type: Optional "prose" or "table" (prefer table for numeric figures).
         doc_type: Optional "earnings_release" or "earnings_call_transcript".
         k: Number of chunks to return.
     """
+    # NOTE: retrieval metadata such as company, doc_type, would make search much more efficient
+    # when corpus scales
     hits = get_store().query(
         query=query,
         k=k,
         company=company,
-        content_type=content_type,
         doc_type=doc_type,
     )
     results = []
+    # present chunks back in useful way for agent to use
     for h in hits:
         meta = h.get("metadata") or {}
         results.append(
@@ -54,24 +52,12 @@ def retrieve_chunks(
                 "text": h["text"],
                 "company": meta.get("company"),
                 "doc_type": meta.get("doc_type"),
-                "content_type": meta.get("content_type"),
                 "source_file": meta.get("source_file"),
                 "doc_date": meta.get("doc_date"),
                 "page": meta.get("page"),
             }
         )
     return json.dumps({"results": results}, ensure_ascii=False)
-
-
-@tool
-def list_documents(company: Optional[str] = None) -> str:
-    """List indexed source files (company, filename, doc_type, doc_date).
-
-    Use this to see what is in the corpus before searching.
-    If a company (e.g. TSMC) is absent, abstain.
-    """
-    rows = get_store().list_documents(company=company)
-    return json.dumps({"documents": rows, "count": len(rows)}, ensure_ascii=False)
 
 
 @tool

@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .cursorignore
+.cursor
 data/index/
 *.egg-info/
 .DS_Store

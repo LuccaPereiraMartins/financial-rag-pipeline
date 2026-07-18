@@ -1,38 +1,48 @@
-"""Ingestion pipeline: PDF folder → chunks → Chroma index."""
+"""Ingestion pipeline: PDF folder → chunks → Chroma index.
+
+Production assumption: each document arrives with known company / doc_type /
+doc_date (see src/parsing/pdf_parser.py module docstring). Here we derive those
+from folder layout + filename conventions for the case-study corpus.
+"""
 
 import argparse
-import json
+import re
 import sys
 from pathlib import Path
 
-from openai import OpenAI
-
-from src.config import Config
 from src.index.vector_store import VectorStore
 from src.parsing.chunker import document_to_chunks
-from src.parsing.pdf_parser import _file_hash, parse_pdf
+from src.parsing.pdf_parser import file_hash, parse_pdf
+
+# NOTE: Metadata is resolved below from path/filename in a hardcoded way to match our corpus
+# in practice, our production ingestion handles this. It could be handled with LLMs, at a cost
 
 
-# TODO: remove this, state that we would have this info when we ingest the data and shouldn't
-# be wasting LLM calls on this
-def _llm_classify(filename: str, page1_text: str) -> dict:
-    client = OpenAI()
-    resp = client.chat.completions.create(
-        model=Config.OPENAI_MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "Classify this semiconductor earnings PDF. Return JSON with keys: "
-                    "company (string), doc_type (earnings_release|earnings_call_transcript).\n\n"
-                    f"Filename: {filename}\n\nPage 1 text:\n{page1_text[:2500]}"
-                ),
-            }
-        ],
-        response_format={"type": "json_object"},
-        temperature=0,
+def _doc_type_from_filename(name: str) -> str:
+    lower = name.lower()
+    if "earnings_call" in lower or "earnings call" in lower:
+        return "earnings_call_transcript"
+    return "earnings_release"
+
+
+def _doc_date_from_filename(name: str) -> str:
+    m = re.search(r"(20\d{2})[-_]?(\d{2})[-_]?(\d{2})", name)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    months = {
+        "january": "01", "february": "02", "march": "03", "april": "04",
+        "may": "05", "june": "06", "july": "07", "august": "08",
+        "september": "09", "october": "10", "november": "11", "december": "12",
+    }
+    m = re.search(
+        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+        r"[_-](\d{1,2})[_-](20\d{2})",
+        name,
+        flags=re.IGNORECASE,
     )
-    return json.loads(resp.choices[0].message.content or "{}")
+    if m:
+        return f"{m.group(3)}-{months[m.group(1).lower()]}-{int(m.group(2)):02d}"
+    return ""
 
 
 def ingest_folder(input_dir: str | Path, force: bool = False) -> dict:
@@ -47,12 +57,17 @@ def ingest_folder(input_dir: str | Path, force: bool = False) -> dict:
 
     for pdf in pdfs:
         try:
-            fhash = _file_hash(pdf)
+            fhash = file_hash(pdf)
             if fhash in existing and not force:
                 stats["skipped"] += 1
                 continue
 
-            doc = parse_pdf(pdf, llm_fallback=_llm_classify)
+            # Stand-in for production metadata attached at upload time
+            company = pdf.parent.name
+            doc_type = _doc_type_from_filename(pdf.name)
+            doc_date = _doc_date_from_filename(pdf.name)
+
+            doc = parse_pdf(pdf, company=company, doc_type=doc_type, doc_date=doc_date)
             chunks = document_to_chunks(doc)
             if force or fhash in existing:
                 store.delete_by_file_hash(fhash)

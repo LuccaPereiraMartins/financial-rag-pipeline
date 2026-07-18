@@ -71,10 +71,9 @@ class VectorStore:
         query: str,
         k: int = 8,
         company: str | None = None,
-        content_type: str | None = None,
         doc_type: str | None = None,
     ) -> list[dict[str, Any]]:
-        where = _build_where(company, content_type, doc_type)
+        where = _build_where(company, doc_type)
         kwargs: dict[str, Any] = {
             "query_embeddings": [self.embedder.embed_one(query)],
             "n_results": k,
@@ -105,44 +104,14 @@ class VectorStore:
             "metadata": (result.get("metadatas") or [{}])[0],
         }
 
-    def list_documents(self, company: str | None = None) -> list[dict[str, str]]:
-        if self.collection.count() == 0:
-            return []
-        kwargs: dict[str, Any] = {"include": ["metadatas"]}
-        if company:
-            kwargs["where"] = {"company": company}
-        result = self.collection.get(**kwargs)
-        seen: set[str] = set()
-        rows = []
-        for meta in result.get("metadatas") or []:
-            if not meta:
-                continue
-            key = meta.get("source_file", "")
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append(
-                {
-                    "company": meta.get("company", ""),
-                    "source_file": key,
-                    "doc_type": meta.get("doc_type", ""),
-                    "doc_date": meta.get("doc_date", ""),
-                }
-            )
-        rows.sort(key=lambda r: (r["company"], r["doc_date"], r["source_file"]))
-        return rows
-
 
 def _build_where(
     company: str | None,
-    content_type: str | None,
     doc_type: str | None,
 ) -> dict | None:
     clauses = []
     if company:
         clauses.append({"company": company})
-    if content_type:
-        clauses.append({"content_type": content_type})
     if doc_type:
         clauses.append({"doc_type": doc_type})
     if not clauses:
