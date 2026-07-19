@@ -51,14 +51,14 @@ def ingest_folder(input_dir: str | Path, force: bool = False) -> dict:
         raise FileNotFoundError(f"Input folder not found: {input_path}")
 
     store = VectorStore()
-    existing = set() if force else store.ingested_file_hashes()
     pdfs = sorted(input_path.rglob("*.pdf"))
     stats = {"found": len(pdfs), "processed": 0, "skipped": 0, "chunks_added": 0, "errors": []}
 
     for pdf in pdfs:
         try:
             fhash = file_hash(pdf)
-            if fhash in existing and not force:
+            stored_hash = None if force else store.stored_file_hash(pdf.name)
+            if stored_hash == fhash:
                 stats["skipped"] += 1
                 continue
 
@@ -69,8 +69,9 @@ def ingest_folder(input_dir: str | Path, force: bool = False) -> dict:
 
             doc = parse_pdf(pdf, company=company, doc_type=doc_type, doc_date=doc_date)
             chunks = document_to_chunks(doc)
-            if force or fhash in existing:
-                store.delete_by_file_hash(fhash)
+            # Drop prior chunks for this filename (content changed or --force)
+            if stored_hash is not None or force:
+                store.delete_by_source_file(pdf.name)
             n = store.upsert_chunks(chunks)
             stats["processed"] += 1
             stats["chunks_added"] += n

@@ -9,8 +9,8 @@ class Config:
     EMBEDDING_MODEL = "text-embedding-3-small"
     INDEX_DIR = "data/index"
     # in practice, these would be tuned for the specific data against some evaluation framework
-    CHUNK_SIZE_WORDS = 250 #NOTE: small chunk size because each line can be dense with information
-    CHUNK_OVERLAP_WORDS = 50
+    CHUNK_SIZE = 500 #NOTE: small chunk size because each line can be dense with information
+    CHUNK_OVERLAP = 50
     RETRIEVAL_TOP_K = 8
     MAX_AGENT_TOOL_CALLS = 8
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

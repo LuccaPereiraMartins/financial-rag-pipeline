@@ -1,4 +1,4 @@
-"""PDF text (+ table) extraction.
+"""PDF text + table extraction.
 
 Production assumption
 ---------------------
@@ -22,9 +22,12 @@ import pdfplumber
 
 
 @dataclass
-class PageText:
+class PageBlock:
+    """One extractable unit on a page — prose or a whole table (as markdown)."""
+
     text: str
     page: int
+    kind: str  # "prose" | "table"
 
 
 @dataclass
@@ -34,7 +37,7 @@ class ParsedDocument:
     company: str
     doc_type: str  # earnings_release | earnings_call_transcript
     doc_date: str  # YYYY-MM-DD when known, else ""
-    pages: list[PageText] = field(default_factory=list)
+    blocks: list[PageBlock] = field(default_factory=list)
 
 
 def file_hash(path: Path) -> str:
@@ -74,25 +77,21 @@ def parse_pdf(
     doc_type: str,
     doc_date: str = "",
 ) -> ParsedDocument:
-    """Extract page text. Metadata must be provided by the caller (ingest)."""
+    """Extract page prose and tables as separate blocks. Metadata from caller (ingest)."""
     path = Path(path)
-    pages: list[PageText] = []
+    blocks: list[PageBlock] = []
 
     with pdfplumber.open(path) as pdf:
         for i, page in enumerate(pdf.pages):
-            parts: list[str] = []
+            page_num = i + 1
             prose = (page.extract_text() or "").strip()
             if prose:
-                parts.append(prose)
-            # Append tables as markdown into the same page stream — no separate
-            # prose/table chunking path. Fixed-size chunking may split a table;
-            # acceptable tradeoff vs maintaining two pipelines.
+                blocks.append(PageBlock(text=prose, page=page_num, kind="prose"))
+            # Keep each table intact as its own block so chunking won't split mid-row
             for table in page.extract_tables() or []:
                 md = table_to_markdown(table)
                 if md.strip():
-                    parts.append(md)
-            if parts:
-                pages.append(PageText(text="\n\n".join(parts), page=i + 1))
+                    blocks.append(PageBlock(text=md, page=page_num, kind="table"))
 
     return ParsedDocument(
         path=path,
@@ -100,5 +99,5 @@ def parse_pdf(
         company=company,
         doc_type=doc_type,
         doc_date=doc_date,
-        pages=pages,
+        blocks=blocks,
     )

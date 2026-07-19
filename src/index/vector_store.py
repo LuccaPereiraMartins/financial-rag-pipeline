@@ -1,6 +1,5 @@
 """Chroma persistent vector store."""
 
-import hashlib
 from pathlib import Path
 from typing import Any, Optional
 
@@ -12,51 +11,53 @@ from src.index.embeddings import Embedder
 from src.parsing.chunker import Chunk
 
 
+# NOTE: in practice, you would use a persistent vector database like S3 Vectors or Pinecone
+# and ingestion would be separate to the agent & retrieval process.
+# NOTE: Production alternative: upload docs to S3 and let a managed service (e.g. Amazon Bedrock
+# Knowledge Bases) handle parsing/OCR/chunking/embedding — this local Chroma path is the
+# case-study stand-in.
+
 class VectorStore:
-    def __init__(self, index_dir: str | None = None, embedder: Embedder | None = None):
-        self.index_dir = Path(index_dir or Config.INDEX_DIR)
+    def __init__(self ):
+        self.index_dir = Path(Config.INDEX_DIR) # we shouldn't be changing the index so not in init args
         self.index_dir.mkdir(parents=True, exist_ok=True)
-        self.embedder = embedder or Embedder()
+        self.embedder = Embedder() # nor for embedding process
         self._client = chromadb.PersistentClient(
             path=str(self.index_dir),
             settings=Settings(anonymized_telemetry=False),
         )
         self.collection = self._client.get_or_create_collection(
             name=Config.COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
+            metadata={"hnsw:space": "cosine"}, # set retrieval algorithm and distance metric
         )
 
-    def ingested_file_hashes(self) -> set[str]:
-        if self.collection.count() == 0:
-            return set()
-        result = self.collection.get(include=["metadatas"])
-        return {
-            m["file_hash"]
-            for m in (result.get("metadatas") or [])
-            if m and m.get("file_hash")
-        }
+    def stored_file_hash(self, source_file: str) -> Optional[str]:
+        """Return the file_hash stored for this source_file, or None if not ingested.
 
-    def delete_by_file_hash(self, file_hash: str) -> None:
-        self.collection.delete(where={"file_hash": file_hash})
+        """
+        result = self.collection.get(
+            where={"source_file": source_file},
+            limit=1,
+            include=["metadatas"],
+        )
+        metas = result.get("metadatas") or []
+        if not metas or not metas[0]:
+            return None
+        return metas[0].get("file_hash")
+
+    def delete_by_source_file(self, source_file: str) -> None:
+        self.collection.delete(where={"source_file": source_file})
 
     def upsert_chunks(self, chunks: list[Chunk]) -> int:
         if not chunks:
             return 0
-        seen: set[str] = set()
-        unique: list[Chunk] = []
-        for c in chunks:
-            if c.chunk_id in seen:
-                c.chunk_id = hashlib.sha256(
-                    f"{c.chunk_id}|{len(unique)}|{c.text[:80]}".encode()
-                ).hexdigest()[:24]
-            seen.add(c.chunk_id)
-            unique.append(c)
 
-        ids = [c.chunk_id for c in unique]
-        documents = [c.text for c in unique]
-        metadatas = [c.metadata() for c in unique]
+        ids = [c.chunk_id for c in chunks]
+        documents = [c.text for c in chunks]
+        metadatas = [c.metadata() for c in chunks]
         embeddings = self.embedder.embed(documents)
 
+        # batch upserts are more efficient
         for i in range(0, len(ids), 100):
             self.collection.upsert(
                 ids=ids[i : i + 100],
@@ -64,7 +65,7 @@ class VectorStore:
                 metadatas=metadatas[i : i + 100],
                 embeddings=embeddings[i : i + 100],
             )
-        return len(unique)
+        return len(chunks)
 
     def query(
         self,
@@ -73,7 +74,16 @@ class VectorStore:
         company: str | None = None,
         doc_type: str | None = None,
     ) -> list[dict[str, Any]]:
-        where = _build_where(company, doc_type)
+        # Chroma metadata filter (`where`). Needed so retrieve_chunks can scope by
+        # company/doc_type. Syntax is awkward when combining filters ($and).
+        where: dict[str, Any] | None = None
+        if company and doc_type:
+            where = {"$and": [{"company": company}, {"doc_type": doc_type}]}
+        elif company:
+            where = {"company": company}
+        elif doc_type:
+            where = {"doc_type": doc_type}
+
         kwargs: dict[str, Any] = {
             "query_embeddings": [self.embedder.embed_one(query)],
             "n_results": k,
@@ -103,19 +113,3 @@ class VectorStore:
             "text": (result.get("documents") or [""])[0],
             "metadata": (result.get("metadatas") or [{}])[0],
         }
-
-
-def _build_where(
-    company: str | None,
-    doc_type: str | None,
-) -> dict | None:
-    clauses = []
-    if company:
-        clauses.append({"company": company})
-    if doc_type:
-        clauses.append({"doc_type": doc_type})
-    if not clauses:
-        return None
-    if len(clauses) == 1:
-        return clauses[0]
-    return {"$and": clauses}

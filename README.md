@@ -18,7 +18,7 @@ copy .env.example .env
 python ingest.py --input data/reports
 ```
 
-Re-runnable and idempotent: new PDFs are added; unchanged files (by content hash) are skipped. Use `--force` to rebuild.
+Re-runnable and idempotent: unchanged PDFs (same content hash per filename) are skipped. Use `--force` to rebuild.
 
 A pre-built index lives in `data/index/` after ingest, so `ask.py` works without re-ingesting.
 
@@ -44,6 +44,7 @@ ABSTAINED: Not found in the provided documents.
 
 ## Notes
 
-- Models: `gpt-4o-mini` (agent) + `text-embedding-3-small` (embeddings), configurable via `.env` / `src/config.py`.
+- Models: `gpt-4o-mini` (agent) + `text-embedding-3-small` (embeddings), set in `src/config.py`.
 - Vector store: local Chroma at `data/index/`.
-- Fiscal calendars differ by company; chunks store both the raw fiscal label and a normalized `YYYY-Qn` calendar period.
+- Company / doc type / date come from folder layout and filename at ingest (stand-in for production CMS metadata).
+- Fiscal calendars differ by company; the agent resolves periods from filenames, `doc_date`, and source text.

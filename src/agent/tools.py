@@ -55,6 +55,7 @@ def retrieve_chunks(
                 "source_file": meta.get("source_file"),
                 "doc_date": meta.get("doc_date"),
                 "page": meta.get("page"),
+                "kind": meta.get("kind"),
             }
         )
     return json.dumps({"results": results}, ensure_ascii=False)
