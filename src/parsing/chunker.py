@@ -47,7 +47,7 @@ def _make_chunk_id(source_file: str, page: int, kind: str, text: str, index: int
 _PROSE_SPLITTER = RecursiveCharacterTextSplitter(
     chunk_size=Config.CHUNK_SIZE,
     chunk_overlap=Config.CHUNK_OVERLAP,
-    separators=["\n\n", "\n", ". ", " ", ""], # set the order in which to split the text
+    separators=["\n\n", "\n", ". ", " ", ""],  # set the order in which to split the text
 )
 
 # Rare huge tables: split on row boundaries only

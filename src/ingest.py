@@ -10,6 +10,7 @@ import re
 import sys
 from pathlib import Path
 
+from src.config import Config
 from src.index.vector_store import VectorStore
 from src.parsing.chunker import document_to_chunks
 from src.parsing.pdf_parser import file_hash, parse_pdf
@@ -90,7 +91,7 @@ def ingest_folder(input_dir: str | Path, force: bool = False) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest earnings PDFs into the vector index")
-    parser.add_argument("--input", required=True, help="Folder of PDFs (searched recursively)")
+    parser.add_argument("--input", default=Config.SOURCE_DIR, help="Folder of PDFs (searched recursively)")
     parser.add_argument("--force", action="store_true", help="Re-ingest even if already present")
     args = parser.parse_args(argv)
     ingest_folder(args.input, force=args.force)

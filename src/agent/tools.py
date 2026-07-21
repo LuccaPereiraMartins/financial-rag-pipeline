@@ -1,10 +1,10 @@
 """Retrieval tools for the Strands agent."""
 
 import json
-from typing import Optional
 
 from strands import tool
 
+from src.config import Config
 from src.index.vector_store import VectorStore
 
 # Lazy singleton: tools are registered as bare functions, so they can't close over
@@ -16,15 +16,17 @@ def get_store() -> VectorStore:
     global _STORE
     if _STORE is None:
         _STORE = VectorStore()
+    if _STORE.collection.count() == 0:
+        raise ValueError('Index is empty.')
     return _STORE
 
 
 @tool
 def retrieve_chunks(
     query: str,
-    company: Optional[str] = None,
-    doc_type: Optional[str] = None,
-    k: int = 8,
+    company: str | None = None,
+    doc_type: str | None = None,
+    k: int = Config.RETRIEVAL_TOP_K,
 ) -> str:
     """Semantic search over earnings PDFs (prose and tables).
 

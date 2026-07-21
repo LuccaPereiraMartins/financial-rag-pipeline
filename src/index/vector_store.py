@@ -1,7 +1,7 @@
 """Chroma persistent vector store."""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import chromadb
 from chromadb.config import Settings
@@ -18,23 +18,21 @@ from src.parsing.chunker import Chunk
 # case-study stand-in.
 
 class VectorStore:
-    def __init__(self ):
-        self.index_dir = Path(Config.INDEX_DIR) # we shouldn't be changing the index so not in init args
+    def __init__(self):
+        self.index_dir = Path(Config.INDEX_DIR)  # we shouldn't be changing the index so not in init args
         self.index_dir.mkdir(parents=True, exist_ok=True)
-        self.embedder = Embedder() # nor for embedding process
+        self.embedder = Embedder()  # nor for embedding process
         self._client = chromadb.PersistentClient(
             path=str(self.index_dir),
             settings=Settings(anonymized_telemetry=False),
         )
         self.collection = self._client.get_or_create_collection(
             name=Config.COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"}, # set retrieval algorithm and distance metric
+            metadata={"hnsw:space": "cosine"},  # set retrieval algorithm and distance metric
         )
 
-    def stored_file_hash(self, source_file: str) -> Optional[str]:
-        """Return the file_hash stored for this source_file, or None if not ingested.
-
-        """
+    def stored_file_hash(self, source_file: str) -> str | None:
+        """Return the file_hash stored for this source_file, or None if not ingested."""
         result = self.collection.get(
             where={"source_file": source_file},
             limit=1,
@@ -70,7 +68,7 @@ class VectorStore:
     def query(
         self,
         query: str,
-        k: int = 8,
+        k: int = Config.RETRIEVAL_TOP_K,
         company: str | None = None,
         doc_type: str | None = None,
     ) -> list[dict[str, Any]]:
@@ -92,19 +90,21 @@ class VectorStore:
         if where:
             kwargs["where"] = where
         result = self.collection.query(**kwargs)
-        hits = []
-        for i, cid in enumerate((result.get("ids") or [[]])[0]):
-            hits.append(
-                {
-                    "chunk_id": cid,
-                    "text": (result.get("documents") or [[]])[0][i],
-                    "metadata": (result.get("metadatas") or [[]])[0][i],
-                    "distance": (result.get("distances") or [[]])[0][i],
-                }
-            )
-        return hits
+        ids = (result.get("ids") or [[]])[0]
+        docs = (result.get("documents") or [[]])[0]
+        metas = (result.get("metadatas") or [[]])[0]
+        dists = (result.get("distances") or [[]])[0]
+        return [
+            {
+                "chunk_id": cid,
+                "text": docs[i],
+                "metadata": metas[i],
+                "distance": dists[i],
+            }
+            for i, cid in enumerate(ids)
+        ]
 
-    def get_chunk(self, chunk_id: str) -> Optional[dict[str, Any]]:
+    def get_chunk(self, chunk_id: str) -> dict[str, Any] | None:
         result = self.collection.get(ids=[chunk_id], include=["documents", "metadatas"])
         if not result.get("ids"):
             return None

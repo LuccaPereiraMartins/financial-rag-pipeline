@@ -16,7 +16,6 @@ metadata from a reasonable stand-in:
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import pdfplumber
 
@@ -48,7 +47,7 @@ def file_hash(path: Path) -> str:
     return h.hexdigest()
 
 
-def table_to_markdown(table: list[list[Optional[str]]]) -> str:
+def table_to_markdown(table: list[list[str | None]]) -> str:
     if not table:
         return ""
     rows = []
