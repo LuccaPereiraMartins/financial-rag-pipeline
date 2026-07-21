@@ -1,0 +1,38 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\setlist{nosep,leftmargin=*}
+\pagestyle{empty}
+\begin{document}
+
+\begin{center}
+{\large\bfseries Financial Earnings RAG}\\[2pt]
+{\small Crake AI Engineer Case Study --- Lucca Pereira Martins}\\[4pt]
+\end{center}
+
+\paragraph{Architecture.}
+CLI-first pipeline: PDFs under \texttt{data/reports/} are parsed with pdfplumber (page prose + each table as markdown), chunked (LangChain recursive split for prose; tables kept whole), embedded with OpenAI \texttt{text-embedding-3-small}, and stored in persistent Chroma (\texttt{data/index/}, cosine). \texttt{ask.py} runs a Strands agent (\texttt{gpt-5.4-nano}) with tools \texttt{retrieve\_chunks}, \texttt{get\_full\_chunk}, and \texttt{think}, returning structured \texttt{AgentAnswer} (answer + citations, or abstain). The agent is a general financial research assistant over whatever is indexed. Company / doc type / a best-effort \texttt{doc\_date} come from folder layout and filename regex at ingest---a stand-in for production CMS metadata. Optional FastAPI exposes \texttt{/ask} and \texttt{/search}; FastMCP mounts \texttt{ask}, \texttt{retrieve\_chunks}, and \texttt{get\_full\_chunk} at \texttt{/mcp}.
+
+\paragraph{Periods / fiscal calendars.}
+Issuers do not share a fiscal calendar (e.g.\ Lam ``Fiscal 2Q25'' can be the calendar quarter ended Dec~2024; ASML ``Q3 2024'' is closer to Jul--Sep). We do \emph{not} rewrite filenames or attach a normalised calendar-period field. Solution is retrieval + reading: chunk headers carry filename/\texttt{doc\_date}, body text often states ``quarter ended \ldots'', and the agent is told not to invent fiscal mappings. Ambiguous asks like ``results 2025'' (calendar vs fiscal) could be imperfect. An early design used an extra LLM call to extract the true reporting period from each PDF; we dropped that as expensive for something that should be structured metadata on the ingest path (ticker, report date, fiscal period labels) in production.
+
+\paragraph{Model \& cost.}
+Agent: \texttt{gpt-5.4-nano}. Embeddings: \texttt{text-embedding-3-small}. List prices used: embeddings \$0.02 / 1M tokens; nano-class chat on the order of \$0.20 / \$1.25 per 1M input/output.
+\begin{itemize}
+  \item \textbf{Bulk ingest} ($\sim$7.1k chunks, $\sim$1.0M embedding tokens): $\approx$\$0.02.
+  \item \textbf{Delta ingest} (one typical PDF, $\sim$50--150 chunks): $\ll$\$0.01 (embedding only).
+  \item \textbf{Single ask} (query embed + tool rounds, incl.\ reasoning tokens): typically well under \$0.05.
+\end{itemize}
+Latency is driven by multi-step tool use, not embedding or retrieval.
+
+\paragraph{Limitations.}
+pdfplumber table/layout fragility; no OCR/vision; local Chroma; filename metadata is corpus-specific; \textbf{no shared fiscal$\leftrightarrow$calendar normalisation}; agent variance run-to-run.
+
+\paragraph{Production / next.}
+S3 + managed knowledge base (e.g.\ Bedrock KB) or managed vector DB; structured period metadata at ingest; OCR (e.g.\ Textract); separate ingest vs agent vs UI; optional graph / larger eval.
+
+\paragraph{AI assistants.}
+Cursor was used throughout (\$8.36 spent). Inline commentary and report writing by author + AI guidance.
+
+\end{document}
