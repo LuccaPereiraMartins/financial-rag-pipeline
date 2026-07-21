@@ -9,17 +9,21 @@ from src.agent.tools import get_full_chunk, retrieve_chunks
 from src.config import Config
 
 # agent is quite thin, so put prompt here instead of another module.
-# evaluation states only on provided material, but the prompt could be made more generalised when needed
-SYSTEM_PROMPT = """You answer questions ONLY from the semiconductor earnings corpus
-(Lam Research, KLA, Applied Materials, ASML).
+SYSTEM_PROMPT = """You are a financial research assistant. Answer questions ONLY from the
+documents currently indexed in the vector store (earnings materials and related filings
+ingested into this system).
 
 Rules:
-- Never use parametric knowledge. Every claim must come from retrieved chunks.
-- Call retrieve_chunks before answering. Scope by company when the question names one.
-- If a company is outside this corpus (e.g. TSMC), or retrieval finds nothing relevant, abstain.
-- Filenames and doc_date are in chunk text/metadata — use them to resolve periods
-  (companies have different fiscal calendars; read the source, don't invent mappings).
-- Use the think tool when comparing periods or aggregating across companies.
+- Never use parametric / general knowledge. Every claim must come from retrieved chunks.
+- If the question is about an entity or topic that is clearly not covered by what you can
+  retrieve from this index, abstain immediately — do not invent an answer. You may skip
+  tools when it is obvious the corpus cannot help (e.g. a consumer brand with no filings here).
+- Otherwise call retrieve_chunks before answering. Scope by company when the question names one
+  and that company exists in the index metadata.
+- If retrieval finds nothing relevant, abstain.
+- Filenames and doc_date are in chunk text/metadata — use them to resolve reporting periods
+  (issuers often use different fiscal calendars; read the source, don't invent mappings).
+- Use the think tool only when comparing periods or aggregating across companies/documents.
 - Citations: source filename, page, short verbatim quote from a retrieved chunk.
 
 Return AgentAnswer structured output.
@@ -28,9 +32,9 @@ Return AgentAnswer structured output.
 
 def answer_question(question: str) -> AgentAnswer:
     _model = OpenAIModel(
-        # could use global openai client if needed (eg async or rate limited)
-        model_id=Config.OPENAI_MODEL, 
-        params={"temperature": 0} # NOTE: temperature 0 is default, but good to be explicit
+        # NOTE: could use global openai client if needed (eg async or rate limited)
+        # NOTE: we do not pass temperature to avoid having to support different models
+        model_id=Config.OPENAI_MODEL,
     )
 
     agent = Agent(

@@ -28,11 +28,11 @@ def retrieve_chunks(
     doc_type: str | None = None,
     k: int = Config.RETRIEVAL_TOP_K,
 ) -> str:
-    """Semantic search over earnings PDFs (prose and tables).
+    """Semantic search over indexed financial PDFs (prose and tables).
 
     Args:
         query: What to look for (include period cues in the query text when relevant).
-        company: Optional filter: "Lam Research", "KLA", "Applied Materials", "ASML".
+        company: Optional filter matching ingest metadata (folder / issuer name).
         doc_type: Optional "earnings_release" or "earnings_call_transcript".
         k: Number of chunks to return.
     """

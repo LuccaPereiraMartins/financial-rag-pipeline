@@ -7,7 +7,7 @@ load_dotenv()
 
 # don't set all of these as env variables because they shouldn't be easily changed
 class Config:
-    OPENAI_MODEL = "gpt-4o-mini"
+    OPENAI_MODEL = "gpt-5.4-nano"
     EMBEDDING_MODEL = "text-embedding-3-small"
     INDEX_DIR = "data/index"
     SOURCE_DIR = "data/reports"
